@@ -2,69 +2,28 @@ import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 
 import { DataPublisher } from "./components/data-publisher";
+import { DataPipeline } from "./components/data-pipeline";
 
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 
-const destinationBucket = new aws.s3.Bucket("mct-destination-bucket");
 
-const firehoseRole = new aws.iam.Role("firehoseRole", 
-    {assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
-        Service: "firehose.amazonaws.com" 
-    })
-});
+const dataPipeline = new DataPipeline("mc-tischler-datapipeline", 
+                    { BucketName: "mct-destination-bucket"}
+                    );
 
-const lambdaIam = new aws.iam.Role("lambdaIam", 
-    {assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
-        Service: "lambda.amazonaws.com" 
-    })
-});
-
-
-const lambdaProcessor = new aws.lambda.Function("lambdaProcessor", {
-    code: new pulumi.asset.AssetArchive({
-        ".": new pulumi.asset.FileArchive("./lambdas/data-interceptor")
-    }),
-    role: lambdaIam.arn,
-    handler: "exports.handler",
-    runtime: "nodejs16.x",
-});
-
-const extendedS3Stream = new aws.kinesis.FirehoseDeliveryStream("mc-firehose-stream", {
-    destination: "extended_s3",
-    extendedS3Configuration: {
-        roleArn: firehoseRole.arn,
-        bucketArn: destinationBucket.arn,
-        processingConfiguration: {
-            enabled: true,
-            processors: [{
-                type: "Lambda",
-                parameters: [{
-                    parameterName: "LambdaArn",
-                    parameterValue: pulumi.interpolate`${lambdaProcessor.arn}:$LATEST`,
-                }],
-            }],
-        },
-    },
-});
-const bucketAcl = new aws.s3.BucketAclV2("bucketAcl", {
-    bucket: destinationBucket.id,
-    acl: "private",
-});
-
-
-const dataStream = new aws.kinesis.Stream("data-stream", {
-    shardCount: 1,
-    shardLevelMetrics: [
-        "IncomingBytes",
-        "OutgoingBytes",
-        "IteratorAgeMilliseconds",
-        "ReadProvisionedThroughputExceeded",
-        "WriteProvisionedThroughputExceeded"
-    ],
-    streamModeDetails: {
-        streamMode: "PROVISIONED"
-    },
-})
+// const dataStream = new aws.kinesis.Stream("data-stream", {
+//     shardCount: 1,
+//     shardLevelMetrics: [
+//         "IncomingBytes",
+//         "OutgoingBytes",
+//         "IteratorAgeMilliseconds",
+//         "ReadProvisionedThroughputExceeded",
+//         "WriteProvisionedThroughputExceeded"
+//     ],
+//     streamModeDetails: {
+//         streamMode: "PROVISIONED"
+//     },
+// })
 
 
 const myDataPublisher = new DataPublisher("mc-firehose-stream", {dataStream: "mc-firehose-stream"});
@@ -108,4 +67,5 @@ const dataGeneratorSchedule: aws.cloudwatch.EventRuleEventSubscription = aws.clo
     dataGeneratorFunction
 )
 
-export const bucketName = destinationBucket.bucket;
+export const bucketName = dataPipeline.destinationBucket.bucket;
+export const firehoseDataPipeline = dataPipeline.firehoseStream.arn;
