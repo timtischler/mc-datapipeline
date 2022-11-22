@@ -76,6 +76,17 @@ export class DataPipeline extends pulumi.ComponentResource {
         } )
 
 
+        const lambda = new aws.lambda.CallbackFunction("mylambda", {
+            callback: async e => { 
+                // your code here ...  
+                console.log("Inside transform function.");
+                return e;
+            },
+            role: lambdaRole,
+            runtime: "nodejs16.x",
+            timeout: 30,
+        });
+
         // Our lambda to process the data is in the component's lambdas directory so we're archiving it 
         // and pushing it up to the function.  
         // I would love to have better control over the versions but I'm not sure what that looks like yet. 
@@ -112,7 +123,7 @@ export class DataPipeline extends pulumi.ComponentResource {
                         type: "Lambda",
                         parameters: [{
                             parameterName: "LambdaArn",
-                            parameterValue: pulumi.interpolate`${lambdaProcessor.arn}:$LATEST`,
+                            parameterValue: pulumi.interpolate`${lambda.arn}:$LATEST`,
                         }],
                     }],
                 },
