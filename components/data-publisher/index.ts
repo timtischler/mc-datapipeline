@@ -17,52 +17,31 @@ export class DataPublisher extends pulumi.ComponentResource {
         this.name = name;
         this.dataStreamName = args.dataStream;
 
-        const lambdaIam = new aws.iam.Role("generatorRoleIam", {assumeRolePolicy: `{
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                "Action": "sts:AssumeRole",
-                "Principal": {
-                    "Service": "lambda.amazonaws.com"
-                },
-                "Effect": "Allow",
-                "Sid": ""
-                }
-            ]
-            }
-            `});
 
-
-        const firehoseRole = new aws.iam.Role("firehosePublishingRole", {assumeRolePolicy: `{
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                "Action": "sts:AssumeRole",
-                "Principal": {
-                    "Service": "firehose.amazonaws.com"
-                },
-                "Effect": "Allow",
-                "Sid": ""
-                }
-            ]
-            }
-            `});
-
+        // permissions for the lambda which needs to execute and write to cloudwatch logs
+        const lambdaRole = new aws.iam.Role("lambda-producer-role", 
+            {assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({Service: "lambda.amazonaws.com"})
+        });
+        const fullAccess = new aws.iam.RolePolicyAttachment("lambda-producer-access", {
+            role: lambdaRole,
+            policyArn: aws.iam.ManagedPolicy.LambdaFullAccess
+        }) 
+        const firehoseWriting = new aws.iam.RolePolicyAttachment("producer-firehose-access", {
+            role: lambdaRole, 
+            policyArn: aws.iam.ManagedPolicy.AmazonKinesisFirehoseFullAccess
+        })
+        const lambdaExecution  = new aws.iam.RolePolicyAttachment("lambda-producer-execution", {
+            role: lambdaRole, 
+            policyArn: aws.iam.ManagedPolicy.AWSLambdaBasicExecutionRole 
+        })
 
         const lambdaProcessor = new aws.lambda.Function("dataGenerator", {
             code: new pulumi.asset.AssetArchive({
                 ".": new pulumi.asset.FileArchive("./components/data-publisher/lambda")
             }),
-            role: lambdaIam.arn,
+            role: lambdaRole.arn,
             handler: "exports.handler",
             runtime: "nodejs16.x",
-        });
-
-        const withSns = new aws.lambda.Permission("withSns", {
-            action: "lambda:InvokeFunction",
-            "function": lambdaProcessor.name,
-            principal: "firehose.amazonaws.com",
-            sourceArn: "arn:aws:firehose:us-east-1:631061573609:deliverystream/mc-firehose-stream-50977e0",
         });
 
         const dataGeneratorFunction: aws.cloudwatch.EventRuleEventHandler = async (

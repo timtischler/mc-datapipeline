@@ -20,11 +20,13 @@ export class DataPipeline extends pulumi.ComponentResource {
 
     destinationBucket: aws.s3.Bucket;
     firehoseStream: aws.kinesis.FirehoseDeliveryStream;
+    logGroupName: string;
 
     constructor(name: string, args: DataPipelineArgs, opts?: pulumi.ComponentResourceOptions) {
         super("pkg:index:DataPipeline", name, args, opts);
 
         this.destinationBucket = this.createBucket(args.BucketName);
+        this.logGroupName = name + "-loggroup";
 
         // permissions for the firehouse delivery stream 
         const firehoseRole = new aws.iam.Role("firehoseRole", 
@@ -45,20 +47,52 @@ export class DataPipeline extends pulumi.ComponentResource {
             role: lambdaRole, 
             policyArn: aws.iam.ManagedPolicy.AmazonKinesisFirehoseFullAccess
         })
+        const lambdaExecution  = new aws.iam.RolePolicyAttachment("lambda-execution", {
+            role: lambdaRole, 
+            policyArn: aws.iam.ManagedPolicy.AWSLambdaBasicExecutionRole 
+        })
+        const lambdaLogging = new aws.iam.Policy("lambdaLogging", {
+            path: "/",
+            description: "IAM policy for logging from a lambda",
+            policy: `{
+                "Version": "2012-10-17",
+                "Statement": [
+                {
+                    "Action": [
+                        "logs:CreateLogGroup",
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents"
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*",
+                    "Effect": "Allow"
+                    }
+                ]
+                }
+                `,
+        });      
+        const lambdaLoggingAttachment = new aws.iam.RolePolicyAttachment("lambda-logging", {
+            role: lambdaRole,
+            policyArn: lambdaLogging.arn 
+        } )
+
 
         // Our lambda to process the data is in the component's lambdas directory so we're archiving it 
         // and pushing it up to the function.  
         // I would love to have better control over the versions but I'm not sure what that looks like yet. 
         const lambdaProcessor = new aws.lambda.Function("lambdaProcessor", {
             code: new pulumi.asset.AssetArchive({
-                ".": new pulumi.asset.FileArchive("./lambdas/data-interceptor")
+                ".": new pulumi.asset.FileArchive("./components/data-pipeline/lambdas/")
             }),
             role: lambdaRole.arn,
-            handler: "exports.handler",
+            handler: "index.handler",
             runtime: "nodejs16.x",
+            timeout: 30, 
         }, {
             parent: this
         });
+
+        const firehoseLogGroup = new aws.cloudwatch.LogGroup('mc-lambda-loggroup');
+        const firehoseLogStream = new aws.cloudwatch.LogStream("mc-firehose-logs", {logGroupName: firehoseLogGroup.name});
 
         // Now we create the firehose stream... 
         // We have it configured to write into S3 and also be processed by 'lambdaProcessor'
@@ -69,8 +103,8 @@ export class DataPipeline extends pulumi.ComponentResource {
                 bucketArn: this.destinationBucket.arn,
                 cloudwatchLoggingOptions: {
                     enabled: true,
-                    logGroupName: 'mc-firehose-group',
-                    logStreamName: 'mc-firehose-stream'
+                    logGroupName: firehoseLogGroup.name, 
+                    logStreamName: firehoseLogStream.name, 
                 },
                 processingConfiguration: {
                     enabled: true,
@@ -92,7 +126,14 @@ export class DataPipeline extends pulumi.ComponentResource {
 
     /** method to create our bucket and assign permissions  */
     private createBucket(bucketName: string) {
-        const destinationBucket = new aws.s3.Bucket(bucketName, {}, {parent: this});
+
+        const loggingBucket = new aws.s3.Bucket(bucketName + "-logging", {}, {parent: this});
+
+        const destinationBucket = new aws.s3.Bucket(bucketName, {
+            loggings: [{
+                targetBucket: loggingBucket.id
+            }]
+        }, {parent: this});
 
         const bucketAcl = new aws.s3.BucketAclV2("bucketAcl", {
             bucket: destinationBucket.id,

@@ -7,8 +7,6 @@ import * as aws from "@pulumi/aws";
  * 
  * @param event 
  */
-export async function generateDataFunction(event: aws.cloudwatch.EventRuleEvent ): Promise<void>{
-
-
+export const handler = async (event: aws.cloudwatch.EventRuleEvent ): Promise<void> => {
     console.log("DATA INTERCEPTOR RAN V2.0");
 }
