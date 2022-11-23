@@ -34,6 +34,78 @@ export class DataPipeline extends pulumi.ComponentResource {
                 assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({Service: "firehose.amazonaws.com"})
             } 
         );
+        const customFirehosePolicy = new aws.iam.Policy("full-firehose-permissions", {
+            policy: `{
+                "Version": "2012-10-17",  
+                "Statement":
+                [    
+                    {      
+                        "Effect": "Allow",      
+                        "Action": [
+                            "s3:AbortMultipartUpload",
+                            "s3:GetBucketLocation",
+                            "s3:GetObject",
+                            "s3:ListBucket",
+                            "s3:ListBucketMultipartUploads",
+                            "s3:PutObject"
+                        ],      
+                        "Resource": [        
+                            "*"
+                        ]    
+                    },        
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "kinesis:DescribeStream",
+                            "kinesis:GetShardIterator",
+                            "kinesis:GetRecords",
+                            "kinesis:ListShards"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                    "Effect": "Allow",
+                    "Action": [
+                        "kms:Decrypt",
+                        "kms:GenerateDataKey"
+                    ],
+                    "Resource": [
+                        "*"
+                    ],
+                    "Condition": {
+                        "StringEquals": {
+                            "kms:ViaService": "s3.region.amazonaws.com"
+                        },
+                        "StringLike": {
+                            "kms:EncryptionContext:aws:s3:arn": "*"
+                        }
+                    }
+                    },
+                    {
+                    "Effect": "Allow",
+                    "Action": [
+                        "logs:PutLogEvents"
+                    ],
+                    "Resource": [
+                        "*"
+                    ]
+                    },
+                    {
+                    "Effect": "Allow", 
+                    "Action": [
+                        "lambda:InvokeFunction", 
+                        "lambda:GetFunctionConfiguration" 
+                    ],
+                    "Resource": [ "*" ]
+                    }
+                ]
+            }`
+        })
+        const firehosePolicyAttachment = new aws.iam.RolePolicyAttachment("firehose-custom-policy", 
+        {
+            role: firehoseRole, 
+            policyArn: customFirehosePolicy.arn
+        })
 
         // permissions for the lambda which needs to execute and write to cloudwatch logs
         const lambdaRole = new aws.iam.Role("lambdaIam", 
@@ -90,17 +162,17 @@ export class DataPipeline extends pulumi.ComponentResource {
         // Our lambda to process the data is in the component's lambdas directory so we're archiving it 
         // and pushing it up to the function.  
         // I would love to have better control over the versions but I'm not sure what that looks like yet. 
-        const lambdaProcessor = new aws.lambda.Function("lambdaProcessor", {
-            code: new pulumi.asset.AssetArchive({
-                ".": new pulumi.asset.FileArchive("./components/data-pipeline/lambdas/")
-            }),
-            role: lambdaRole.arn,
-            handler: "index.handler",
-            runtime: "nodejs16.x",
-            timeout: 30, 
-        }, {
-            parent: this
-        });
+        // const lambdaProcessor = new aws.lambda.Function("lambdaProcessor", {
+        //     code: new pulumi.asset.AssetArchive({
+        //         ".": new pulumi.asset.FileArchive("components/data-pipeline/lambdas/")
+        //     }),
+        //     role: lambdaRole.arn,
+        //     handler: "index.handler",
+        //     runtime: "nodejs16.x",
+        //     timeout: 30, 
+        // }, {
+        //     parent: this
+        // });
 
         const firehoseLogGroup = new aws.cloudwatch.LogGroup('mc-lambda-loggroup');
         const firehoseLogStream = new aws.cloudwatch.LogStream("mc-firehose-logs", {logGroupName: firehoseLogGroup.name});
