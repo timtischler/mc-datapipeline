@@ -1,5 +1,6 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { MetricAlarm } from "@pulumi/aws/cloudwatch";
 
 /** interface declaring what data is needed to pass in to create our data pipeline */
 export interface DataPipelineArgs {
@@ -159,20 +160,6 @@ export class DataPipeline extends pulumi.ComponentResource {
             timeout: 30,
         });
 
-        // Our lambda to process the data is in the component's lambdas directory so we're archiving it 
-        // and pushing it up to the function.  
-        // I would love to have better control over the versions but I'm not sure what that looks like yet. 
-        // const lambdaProcessor = new aws.lambda.Function("lambdaProcessor", {
-        //     code: new pulumi.asset.AssetArchive({
-        //         ".": new pulumi.asset.FileArchive("components/data-pipeline/lambdas/")
-        //     }),
-        //     role: lambdaRole.arn,
-        //     handler: "index.handler",
-        //     runtime: "nodejs16.x",
-        //     timeout: 30, 
-        // }, {
-        //     parent: this
-        // });
 
         const firehoseLogGroup = new aws.cloudwatch.LogGroup('mc-lambda-loggroup');
         const firehoseLogStream = new aws.cloudwatch.LogStream("mc-firehose-logs", {logGroupName: firehoseLogGroup.name});
@@ -204,6 +191,18 @@ export class DataPipeline extends pulumi.ComponentResource {
             parent: this
         });
 
+        // First stab at delivery lag alarm
+        const s3DeliveryLagAlarm = new aws.cloudwatch.MetricAlarm("s3DeliveryLagAlarm", 
+            {
+                comparisonOperator: "GreaterThanOrEqualToThreshold",
+                evaluationPeriods: 2,
+                period: 120,
+                metricName: "DeliveryToS3.DataFreshness",
+                statistic: "Average",
+                namespace: "Firehose",
+                threshold: 60,
+            }
+        );
 
     }
 
