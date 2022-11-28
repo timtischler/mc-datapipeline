@@ -1,7 +1,17 @@
-''' 
+## How To Do Things
+
+### Run simple data test 
+
+```aws firehose put-record --delivery-stream-name $(pulumi stack output firehoseDataPipelineName) --record file://doc.json --cli-binary-format raw-in-base64-out```
+
+
+
+### Initial new stack
+
 `pulumi stack init staging`
 
-Things To Do: 
+
+## Things To Do: 
 - Extract the concept of stack out into dev|staging|production
 - Fix data generation 
 - Extract region into configuration
