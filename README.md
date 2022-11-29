@@ -2,7 +2,7 @@
 
 ### Run simple data test 
 
-```aws firehose put-record --delivery-stream-name $(pulumi stack output firehoseDataPipelineName) --record file://doc.json --cli-binary-format raw-in-base64-out```
+```while [ true ]; do aws firehose put-record --delivery-stream-name $(pulumi stack output firehoseDataPipelineName) --record file://doc.json --cli-binary-format raw-in-base64-out; done```
 
 
 
